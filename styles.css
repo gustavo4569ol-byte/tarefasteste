@@ -645,19 +645,19 @@ label {
    ============================================================================ */
 
 .kanban-container {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: var(--spacing-md);
-  overflow-x: auto;
-  padding: var(--spacing-md) 0;
-  -webkit-overflow-scrolling: touch;
+  padding: var(--spacing-md);
 }
 
 .kanban-column {
-  flex: 0 0 calc(100% - var(--spacing-md));
   background-color: var(--color-gray-light);
   border-radius: var(--radius-lg);
   padding: var(--spacing-md);
-  min-height: 400px;
+  min-height: 500px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .kanban-column-header {
@@ -854,8 +854,8 @@ label {
     padding: var(--spacing-md);
   }
 
-  .kanban-column {
-    flex: 0 0 calc(100% - var(--spacing-sm));
+  .kanban-container {
+    grid-template-columns: 1fr;
   }
 }
 
