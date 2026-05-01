@@ -569,10 +569,9 @@ function saveTask() {
     });
   } else {
     taskManager.createTask(taskManager.currentListId, taskManager.currentSublistId, title);
-    taskManager.updateTask(taskManager.currentListId, taskManager.currentSublistId, 
-      taskManager.getSublist(taskManager.currentListId, taskManager.currentSublistId).tasks[
-        taskManager.getSublist(taskManager.currentListId, taskManager.currentSublistId).tasks.length - 1
-      ].id, { priority, dueDate, note, flagged, status });
+    const sublist = taskManager.getSublist(taskManager.currentListId, taskManager.currentSublistId);
+    const newTaskId = sublist.tasks[sublist.tasks.length - 1].id;
+    taskManager.updateTask(taskManager.currentListId, taskManager.currentSublistId, newTaskId, { priority, dueDate, note, flagged, status });
   }
 
   closeTaskModal();
@@ -601,8 +600,11 @@ function deleteTask(listId, sublistId, taskId) {
 
 function toggleTaskComplete(listId, sublistId, taskId) {
   const task = taskManager.getTask(listId, sublistId, taskId);
-  taskManager.updateTask(listId, sublistId, taskId, { completed: !task.completed });
+  const newCompleted = !task.completed;
+  const newStatus = newCompleted ? 'done' : 'todo';
+  taskManager.updateTask(listId, sublistId, taskId, { completed: newCompleted, status: newStatus });
   renderSublistTasksScreen();
+  renderOverviewScreen();
 }
 
 function closeTaskModal() {
@@ -647,7 +649,8 @@ function renderOverviewScreen() {
         </div>
       `;
 
-      const tasks = taskManager.getSublistTasksSorted(list.id, sublist.id);
+      // Filtrar apenas tarefas que não estão concluídas
+      const tasks = taskManager.getSublistTasksSorted(list.id, sublist.id).filter(t => t.status !== 'done');
       if (tasks.length === 0) {
         sublistDiv.innerHTML += '<div class="text-muted" style="font-size: var(--font-size-caption);">Sem tarefas</div>';
       } else {
@@ -708,8 +711,13 @@ function renderOverviewScreen() {
 function renderKanban1Screen() {
   const container = document.getElementById('kanban1-content');
   container.innerHTML = '';
+  container.style.display = 'grid';
+  container.style.gridTemplateColumns = '1fr 1fr';
+  container.style.gap = 'var(--spacing-md)';
+  container.style.padding = 'var(--spacing-md)';
 
   if (taskManager.lists.length === 0) {
+    container.style.gridColumn = '1 / -1';
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">📊</div>
@@ -720,13 +728,12 @@ function renderKanban1Screen() {
     return;
   }
 
-  const kanbanContainer = document.createElement('div');
-  kanbanContainer.className = 'kanban-container';
-
   taskManager.lists.forEach(list => {
     list.sublists.forEach(sublist => {
       const column = document.createElement('div');
       column.className = 'kanban-column';
+      column.style.minHeight = '500px';
+      column.style.overflowY = 'auto';
 
       const header = document.createElement('div');
       header.className = 'kanban-column-header';
@@ -755,11 +762,9 @@ function renderKanban1Screen() {
         column.appendChild(card);
       });
 
-      kanbanContainer.appendChild(column);
+      container.appendChild(column);
     });
   });
-
-  container.appendChild(kanbanContainer);
 }
 
 // ============================================================================
@@ -769,16 +774,19 @@ function renderKanban1Screen() {
 function renderKanban2Screen() {
   const container = document.getElementById('kanban2-content');
   container.innerHTML = '';
+  container.style.display = 'grid';
+  container.style.gridTemplateColumns = '1fr 1fr';
+  container.style.gap = 'var(--spacing-md)';
+  container.style.padding = 'var(--spacing-md)';
 
   const statuses = ['todo', 'in-progress', 'done'];
   const statusLabels = { 'todo': 'A Fazer', 'in-progress': 'Em Andamento', 'done': 'Concluída' };
 
-  const kanbanContainer = document.createElement('div');
-  kanbanContainer.className = 'kanban-container';
-
   statuses.forEach(status => {
     const column = document.createElement('div');
     column.className = 'kanban-column';
+    column.style.minHeight = '500px';
+    column.style.overflowY = 'auto';
 
     const header = document.createElement('div');
     header.className = 'kanban-column-header';
@@ -806,10 +814,8 @@ function renderKanban2Screen() {
       column.appendChild(card);
     });
 
-    kanbanContainer.appendChild(column);
+    container.appendChild(column);
   });
-
-  container.appendChild(kanbanContainer);
 }
 
 // ============================================================================
@@ -820,7 +826,7 @@ function renderNotebookScreen() {
   const container = document.getElementById('notebook-content');
   container.innerHTML = '';
 
-  const allTasks = taskManager.getAllTasksSorted();
+  const allTasks = taskManager.getAllTasksSorted().filter(t => t.status !== 'done');
 
   if (allTasks.length === 0) {
     container.innerHTML = `
@@ -878,6 +884,64 @@ function renderNotebookScreen() {
 }
 
 // ============================================================================
+// Tela 6: Concluídas (Tarefas Concluídas)
+// ============================================================================
+
+function renderCompletedScreen() {
+  const container = document.getElementById('completed-content');
+  container.innerHTML = '';
+
+  const completedTasks = taskManager.getAllTasksSorted().filter(t => t.status === 'done');
+
+  if (completedTasks.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">✅</div>
+        <div class="empty-state-title">Nenhuma tarefa concluída</div>
+        <div class="empty-state-text">Complete tarefas para vê-las aqui</div>
+      </div>
+    `;
+    return;
+  }
+
+  completedTasks.forEach(task => {
+    const taskEl = document.createElement('div');
+    taskEl.className = 'task-item completed';
+    taskEl.style.borderLeftColor = 'var(--color-success)';
+
+    let metaHtml = '';
+    if (task.flagged) {
+      metaHtml += '<span class="task-flagged">🚩 Sinalizada</span>';
+    }
+    if (task.priority !== 'low') {
+      const priorityLabel = task.priority === 'high' ? 'Alta' : 'Média';
+      metaHtml += `<span class="task-priority ${task.priority}">${priorityLabel}</span>`;
+    }
+    if (task.dueDate) {
+      metaHtml += `<span class="task-date">📅 ${formatDate(task.dueDate)}</span>`;
+    }
+    metaHtml += `<span class="text-small">${escapeHtml(task.listName)} • ${escapeHtml(task.sublistName)}</span>`;
+    if (task.note) {
+      metaHtml += `<span class="task-note-icon" onclick="showTaskNote('${task.id}', '${task.listId}', '${task.sublistId}')">📝</span>`;
+    }
+
+    taskEl.innerHTML = `
+      <div class="task-checkbox checked" onclick="toggleTaskComplete('${task.listId}', '${task.sublistId}', '${task.id}')">
+        ✓
+      </div>
+      <div class="task-content">
+        <div class="task-title">${escapeHtml(task.title)}</div>
+        <div class="task-meta">${metaHtml}</div>
+      </div>
+      <div class="task-actions">
+        <button class="btn-icon" onclick="deleteTask('${task.listId}', '${task.sublistId}', '${task.id}')">🗑️</button>
+      </div>
+    `;
+    container.appendChild(taskEl);
+  });
+}
+
+// ============================================================================
 // Utilitários
 // ============================================================================
 
@@ -922,6 +986,8 @@ document.addEventListener('DOMContentLoaded', () => {
         renderKanban2Screen();
       } else if (screen === 'notebook') {
         renderNotebookScreen();
+      } else if (screen === 'completed') {
+        renderCompletedScreen();
       }
       showScreen(screen);
     });
@@ -945,13 +1011,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Botões de fechar
   document.getElementById('list-close-btn').addEventListener('click', closeListModal);
+  document.getElementById('list-close-btn-footer').addEventListener('click', closeListModal);
   document.getElementById('sublist-close-btn').addEventListener('click', closeSublistModal);
+  document.getElementById('sublist-close-btn-footer').addEventListener('click', closeSublistModal);
   document.getElementById('task-close-btn').addEventListener('click', closeTaskModal);
+  document.getElementById('task-close-btn-footer').addEventListener('click', closeTaskModal);
 
-  // Botão de voltar
+  // Botões de voltar
   document.getElementById('back-btn').addEventListener('click', goBack);
+  const backBtnSublist = document.getElementById('back-btn-sublist');
+  if (backBtnSublist) {
+    backBtnSublist.addEventListener('click', goBack);
+  }
 
   // Mostrar tela inicial
   showScreen('overview');
   renderOverviewScreen();
 });
+
+
