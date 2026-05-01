@@ -575,7 +575,13 @@ function saveTask() {
   }
 
   closeTaskModal();
-  renderSublistTasksScreen();
+  
+  // Renderizar a tela correta baseado na tela atual
+  if (currentScreen === 'overview') {
+    renderOverviewScreen();
+  } else if (currentScreen === 'sublist-tasks') {
+    renderSublistTasksScreen();
+  }
 }
 
 function editTask(listId, sublistId, taskId) {
@@ -603,8 +609,17 @@ function toggleTaskComplete(listId, sublistId, taskId) {
   const newCompleted = !task.completed;
   const newStatus = newCompleted ? 'done' : 'todo';
   taskManager.updateTask(listId, sublistId, taskId, { completed: newCompleted, status: newStatus });
-  renderSublistTasksScreen();
-  renderOverviewScreen();
+  
+  // Renderizar a tela correta baseado na tela atual
+  if (currentScreen === 'overview') {
+    renderOverviewScreen();
+  } else if (currentScreen === 'sublist-tasks') {
+    renderSublistTasksScreen();
+  } else if (currentScreen === 'notebook') {
+    renderNotebookScreen();
+  } else if (currentScreen === 'completed') {
+    renderCompletedScreen();
+  }
 }
 
 function closeTaskModal() {
