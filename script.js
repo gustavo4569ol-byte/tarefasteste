@@ -141,6 +141,15 @@ class TaskManager {
   updateTask(listId, sublistId, taskId, updates) {
     const task = this.getTask(listId, sublistId, taskId);
     if (task) {
+      // Sincronizar status se completed mudar
+      if (updates.hasOwnProperty('completed')) {
+        updates.status = updates.completed ? 'done' : (task.status === 'done' ? 'todo' : task.status);
+      }
+      // Sincronizar completed se status mudar
+      if (updates.hasOwnProperty('status')) {
+        updates.completed = updates.status === 'done';
+      }
+      
       Object.assign(task, updates);
       this.saveToStorage();
     }
@@ -155,41 +164,61 @@ class TaskManager {
     }
   }
 
-  // Obter todas as tarefas ordenadas por prioridade e flag
-  getAllTasksSorted() {
+  // Obter todas as tarefas ordenadas por prioridade e flag (Apenas ativas)
+  getAllActiveTasksSorted() {
     const allTasks = [];
     this.lists.forEach(list => {
       list.sublists.forEach(sublist => {
         sublist.tasks.forEach(task => {
-          allTasks.push({
-            ...task,
-            listId: list.id,
-            listName: list.name,
-            sublistId: sublist.id,
-            sublistName: sublist.name
-          });
+          if (task.status !== 'done' && !task.completed) {
+            allTasks.push({
+              ...task,
+              listId: list.id,
+              listName: list.name,
+              sublistId: sublist.id,
+              sublistName: sublist.name
+            });
+          }
         });
       });
     });
 
-    // Ordenar: flagged primeiro, depois por prioridade, depois por data
-    return allTasks.sort((a, b) => {
-      if (a.flagged !== b.flagged) return b.flagged - a.flagged;
-      const priorityOrder = { high: 0, medium: 1, low: 2 };
-      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
-        return priorityOrder[a.priority] - priorityOrder[b.priority];
-      }
-      return new Date(a.createdAt) - new Date(b.createdAt);
-    });
+    return this.sortTasks(allTasks);
   }
 
-  // Obter tarefas por sublista ordenadas
+  // Obter todas as tarefas concluídas
+  getAllCompletedTasks() {
+    const completedTasks = [];
+    this.lists.forEach(list => {
+      list.sublists.forEach(sublist => {
+        sublist.tasks.forEach(task => {
+          if (task.status === 'done' || task.completed) {
+            completedTasks.push({
+              ...task,
+              listId: list.id,
+              listName: list.name,
+              sublistId: sublist.id,
+              sublistName: sublist.name
+            });
+          }
+        });
+      });
+    });
+    return completedTasks.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }
+
+  // Obter tarefas por sublista ordenadas (Apenas ativas)
   getSublistTasksSorted(listId, sublistId) {
     const sublist = this.getSublist(listId, sublistId);
     if (!sublist) return [];
 
-    const tasks = [...sublist.tasks];
-    return tasks.sort((a, b) => {
+    const tasks = sublist.tasks.filter(t => t.status !== 'done' && !t.completed);
+    return this.sortTasks(tasks);
+  }
+
+  // Utilitário de ordenação
+  sortTasks(tasks) {
+    return [...tasks].sort((a, b) => {
       if (a.flagged !== b.flagged) return b.flagged - a.flagged;
       const priorityOrder = { high: 0, medium: 1, low: 2 };
       if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
@@ -218,11 +247,7 @@ class TaskManager {
       });
     });
 
-    return allTasks.sort((a, b) => {
-      if (a.flagged !== b.flagged) return b.flagged - a.flagged;
-      const priorityOrder = { high: 0, medium: 1, low: 2 };
-      return priorityOrder[a.priority] - priorityOrder[b.priority];
-    });
+    return this.sortTasks(allTasks);
   }
 }
 
@@ -301,12 +326,11 @@ function renderSettingsScreen() {
   addBtn.style.width = '100%';
   addBtn.style.marginTop = 'var(--spacing-lg)';
   addBtn.textContent = '+ Criar Nova Lista';
-  addBtn.onclick = () => showCreateListModal();
+  addBtn.onclick = showCreateListModal;
   container.appendChild(addBtn);
 }
 
 function showCreateListModal() {
-  const modal = document.getElementById('list-modal');
   document.getElementById('list-modal-title').textContent = 'Criar Nova Lista';
   document.getElementById('list-input').value = '';
   document.getElementById('list-input').dataset.listId = '';
@@ -335,7 +359,6 @@ function saveList() {
 
 function editList(listId) {
   const list = taskManager.getList(listId);
-  const modal = document.getElementById('list-modal');
   document.getElementById('list-modal-title').textContent = 'Editar Lista';
   document.getElementById('list-input').value = list.name;
   document.getElementById('list-input').dataset.listId = listId;
@@ -407,7 +430,6 @@ function renderListDetailScreen() {
 }
 
 function showCreateSublistModal(listId) {
-  const modal = document.getElementById('sublist-modal');
   document.getElementById('sublist-modal-title').textContent = 'Criar Sublista';
   document.getElementById('sublist-input').value = '';
   document.getElementById('sublist-input').dataset.sublistId = '';
@@ -475,7 +497,7 @@ function renderSublistTasksScreen() {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">✓</div>
-        <div class="empty-state-title">Nenhuma tarefa</div>
+        <div class="empty-state-title">Nenhuma tarefa ativa</div>
         <div class="empty-state-text">Clique no botão abaixo para adicionar sua primeira tarefa</div>
       </div>
     `;
@@ -491,7 +513,11 @@ function renderSublistTasksScreen() {
   addBtn.style.width = '100%';
   addBtn.style.marginTop = 'var(--spacing-lg)';
   addBtn.textContent = '+ Adicionar Tarefa';
-  addBtn.onclick = () => showCreateTaskModal(taskManager.currentListId, taskManager.currentSublistId);
+  addBtn.onclick = () => {
+    taskManager.currentListId = list.id;
+    taskManager.currentSublistId = sublist.id;
+    showCreateTaskModal(list.id, sublist.id);
+  };
   container.appendChild(addBtn);
 }
 
@@ -518,14 +544,14 @@ function createTaskElement(task, listId, sublistId) {
     metaHtml += `<span class="task-date">📅 ${formatDate(task.dueDate)}</span>`;
   }
   if (task.note) {
-    metaHtml += `<span class="task-note-icon" onclick="showTaskNote('${task.id}', '${listId}', '${sublistId}')">📝</span>`;
+    metaHtml += `<span class="task-note-icon" onclick="event.stopPropagation(); showTaskNote('${task.id}', '${listId}', '${sublistId}')">📝</span>`;
   }
 
   taskEl.innerHTML = `
-    <div class="task-checkbox ${task.completed ? 'checked' : ''}" onclick="toggleTaskComplete('${listId}', '${sublistId}', '${task.id}')">
+    <div class="task-checkbox ${task.completed ? 'checked' : ''}" onclick="event.stopPropagation(); toggleTaskComplete('${listId}', '${sublistId}', '${task.id}')">
       ${task.completed ? '✓' : ''}
     </div>
-    <div class="task-content">
+    <div class="task-content" onclick="editTask('${listId}', '${sublistId}', '${task.id}')">
       <div class="task-title">${escapeHtml(task.title)}</div>
       <div class="task-meta">${metaHtml}</div>
     </div>
@@ -538,6 +564,8 @@ function createTaskElement(task, listId, sublistId) {
 }
 
 function showCreateTaskModal(listId, sublistId) {
+  taskManager.currentListId = listId;
+  taskManager.currentSublistId = sublistId;
   document.getElementById('task-modal-title').textContent = 'Criar Tarefa';
   document.getElementById('task-input-title').value = '';
   document.getElementById('task-input-priority').value = 'low';
@@ -570,21 +598,28 @@ function saveTask() {
   } else {
     taskManager.createTask(taskManager.currentListId, taskManager.currentSublistId, title);
     const sublist = taskManager.getSublist(taskManager.currentListId, taskManager.currentSublistId);
-    const newTaskId = sublist.tasks[sublist.tasks.length - 1].id;
-    taskManager.updateTask(taskManager.currentListId, taskManager.currentSublistId, newTaskId, { priority, dueDate, note, flagged, status });
+    const newTask = sublist.tasks[sublist.tasks.length - 1];
+    taskManager.updateTask(taskManager.currentListId, taskManager.currentSublistId, newTask.id, { 
+      priority, dueDate, note, flagged, status 
+    });
   }
 
   closeTaskModal();
-  
-  // Renderizar a tela correta baseado na tela atual
-  if (currentScreen === 'overview') {
-    renderOverviewScreen();
-  } else if (currentScreen === 'sublist-tasks') {
-    renderSublistTasksScreen();
-  }
+  refreshCurrentScreen();
+}
+
+function refreshCurrentScreen() {
+  if (currentScreen === 'overview') renderOverviewScreen();
+  else if (currentScreen === 'kanban1') renderKanban1Screen();
+  else if (currentScreen === 'kanban2') renderKanban2Screen();
+  else if (currentScreen === 'notebook') renderNotebookScreen();
+  else if (currentScreen === 'completed') renderCompletedScreen();
+  else if (currentScreen === 'sublist-tasks') renderSublistTasksScreen();
 }
 
 function editTask(listId, sublistId, taskId) {
+  taskManager.currentListId = listId;
+  taskManager.currentSublistId = sublistId;
   const task = taskManager.getTask(listId, sublistId, taskId);
   document.getElementById('task-modal-title').textContent = 'Editar Tarefa';
   document.getElementById('task-input-title').value = task.title;
@@ -600,26 +635,14 @@ function editTask(listId, sublistId, taskId) {
 function deleteTask(listId, sublistId, taskId) {
   if (confirm('Tem certeza que deseja deletar esta tarefa?')) {
     taskManager.deleteTask(listId, sublistId, taskId);
-    renderSublistTasksScreen();
+    refreshCurrentScreen();
   }
 }
 
 function toggleTaskComplete(listId, sublistId, taskId) {
   const task = taskManager.getTask(listId, sublistId, taskId);
-  const newCompleted = !task.completed;
-  const newStatus = newCompleted ? 'done' : 'todo';
-  taskManager.updateTask(listId, sublistId, taskId, { completed: newCompleted, status: newStatus });
-  
-  // Renderizar a tela correta baseado na tela atual
-  if (currentScreen === 'overview') {
-    renderOverviewScreen();
-  } else if (currentScreen === 'sublist-tasks') {
-    renderSublistTasksScreen();
-  } else if (currentScreen === 'notebook') {
-    renderNotebookScreen();
-  } else if (currentScreen === 'completed') {
-    renderCompletedScreen();
-  }
+  taskManager.updateTask(listId, sublistId, taskId, { completed: !task.completed });
+  refreshCurrentScreen();
 }
 
 function closeTaskModal() {
@@ -664,18 +687,16 @@ function renderOverviewScreen() {
         </div>
       `;
 
-      // Filtrar apenas tarefas que não estão concluídas
-      const tasks = taskManager.getSublistTasksSorted(list.id, sublist.id).filter(t => t.status !== 'done');
+      const tasks = taskManager.getSublistTasksSorted(list.id, sublist.id);
       if (tasks.length === 0) {
-        sublistDiv.innerHTML += '<div class="text-muted" style="font-size: var(--font-size-caption);">Sem tarefas</div>';
+        sublistDiv.innerHTML += '<div class="text-muted" style="font-size: var(--font-size-caption);">Sem tarefas ativas</div>';
       } else {
         tasks.forEach(task => {
           const taskDiv = document.createElement('div');
           taskDiv.className = 'task-item';
           taskDiv.style.marginBottom = 'var(--spacing-sm)';
           taskDiv.style.cursor = 'pointer';
-          taskDiv.onclick = () => editTask(list.id, sublist.id, task.id);
-
+          
           let metaHtml = '';
           if (task.flagged) {
             metaHtml += '<span class="task-flagged">🚩</span>';
@@ -692,7 +713,7 @@ function renderOverviewScreen() {
             <div class="task-checkbox ${task.completed ? 'checked' : ''}" onclick="event.stopPropagation(); toggleTaskComplete('${list.id}', '${sublist.id}', '${task.id}')">
               ${task.completed ? '✓' : ''}
             </div>
-            <div class="task-content">
+            <div class="task-content" onclick="editTask('${list.id}', '${sublist.id}', '${task.id}')">
               <div class="task-title">${escapeHtml(task.title)}</div>
               <div class="task-meta">${metaHtml}</div>
             </div>
@@ -705,11 +726,7 @@ function renderOverviewScreen() {
       addBtn.className = 'btn-primary btn-small';
       addBtn.style.marginTop = 'var(--spacing-sm)';
       addBtn.textContent = '+ Adicionar';
-      addBtn.onclick = () => {
-        taskManager.currentListId = list.id;
-        taskManager.currentSublistId = sublist.id;
-        showCreateTaskModal(list.id, sublist.id);
-      };
+      addBtn.onclick = () => showCreateTaskModal(list.id, sublist.id);
       sublistDiv.appendChild(addBtn);
 
       listDiv.appendChild(sublistDiv);
@@ -726,13 +743,8 @@ function renderOverviewScreen() {
 function renderKanban1Screen() {
   const container = document.getElementById('kanban1-content');
   container.innerHTML = '';
-  container.style.display = 'grid';
-  container.style.gridTemplateColumns = '1fr 1fr';
-  container.style.gap = 'var(--spacing-md)';
-  container.style.padding = 'var(--spacing-md)';
 
   if (taskManager.lists.length === 0) {
-    container.style.gridColumn = '1 / -1';
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">📊</div>
@@ -743,18 +755,19 @@ function renderKanban1Screen() {
     return;
   }
 
+  const kanbanContainer = document.createElement('div');
+  kanbanContainer.className = 'kanban-container';
+
   taskManager.lists.forEach(list => {
     list.sublists.forEach(sublist => {
       const column = document.createElement('div');
       column.className = 'kanban-column';
-      column.style.minHeight = '500px';
-      column.style.overflowY = 'auto';
 
       const header = document.createElement('div');
       header.className = 'kanban-column-header';
       header.innerHTML = `
         ${escapeHtml(sublist.name)}
-        <span class="kanban-column-count">(${sublist.tasks.length})</span>
+        <span class="kanban-column-count">(${sublist.tasks.filter(t => !t.completed).length})</span>
       `;
       column.appendChild(header);
 
@@ -770,16 +783,17 @@ function renderKanban1Screen() {
           <div style="display: flex; gap: 4px; flex-wrap: wrap;">
             ${task.flagged ? '<span class="badge badge-flagged">🚩 Sinalizada</span>' : ''}
             ${task.priority !== 'low' ? `<span class="badge task-priority ${task.priority}">${task.priority === 'high' ? 'Alta' : 'Média'}</span>` : ''}
-            ${task.completed ? '<span class="badge badge-completed">✓ Concluída</span>' : ''}
           </div>
         `;
         card.onclick = () => editTask(list.id, sublist.id, task.id);
         column.appendChild(card);
       });
 
-      container.appendChild(column);
+      kanbanContainer.appendChild(column);
     });
   });
+
+  container.appendChild(kanbanContainer);
 }
 
 // ============================================================================
@@ -789,19 +803,16 @@ function renderKanban1Screen() {
 function renderKanban2Screen() {
   const container = document.getElementById('kanban2-content');
   container.innerHTML = '';
-  container.style.display = 'grid';
-  container.style.gridTemplateColumns = '1fr 1fr';
-  container.style.gap = 'var(--spacing-md)';
-  container.style.padding = 'var(--spacing-md)';
 
   const statuses = ['todo', 'in-progress', 'done'];
   const statusLabels = { 'todo': 'A Fazer', 'in-progress': 'Em Andamento', 'done': 'Concluída' };
 
+  const kanbanContainer = document.createElement('div');
+  kanbanContainer.className = 'kanban-container';
+
   statuses.forEach(status => {
     const column = document.createElement('div');
     column.className = 'kanban-column';
-    column.style.minHeight = '500px';
-    column.style.overflowY = 'auto';
 
     const header = document.createElement('div');
     header.className = 'kanban-column-header';
@@ -829,25 +840,27 @@ function renderKanban2Screen() {
       column.appendChild(card);
     });
 
-    container.appendChild(column);
+    kanbanContainer.appendChild(column);
   });
+
+  container.appendChild(kanbanContainer);
 }
 
 // ============================================================================
-// Tela 5: Caderno (Todas as Tarefas)
+// Tela 5: Caderno (Todas as Tarefas Ativas)
 // ============================================================================
 
 function renderNotebookScreen() {
   const container = document.getElementById('notebook-content');
   container.innerHTML = '';
 
-  const allTasks = taskManager.getAllTasksSorted().filter(t => t.status !== 'done');
+  const allTasks = taskManager.getAllActiveTasksSorted();
 
   if (allTasks.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">📔</div>
-        <div class="empty-state-title">Nenhuma tarefa</div>
+        <div class="empty-state-title">Nenhuma tarefa ativa</div>
         <div class="empty-state-text">Crie tarefas para visualizá-las aqui</div>
       </div>
     `;
@@ -855,65 +868,34 @@ function renderNotebookScreen() {
   }
 
   allTasks.forEach(task => {
-    const taskEl = document.createElement('div');
-    taskEl.className = `task-item ${task.completed ? 'completed' : ''}`;
-    if (task.priority === 'high') {
-      taskEl.style.borderLeftColor = 'var(--color-priority-high)';
-    } else if (task.priority === 'medium') {
-      taskEl.style.borderLeftColor = 'var(--color-priority-medium)';
-    } else {
-      taskEl.style.borderLeftColor = 'var(--color-priority-low)';
-    }
-
-    let metaHtml = '';
-    if (task.flagged) {
-      metaHtml += '<span class="task-flagged">🚩 Sinalizada</span>';
-    }
-    if (task.priority !== 'low') {
-      const priorityLabel = task.priority === 'high' ? 'Alta' : 'Média';
-      metaHtml += `<span class="task-priority ${task.priority}">${priorityLabel}</span>`;
-    }
-    if (task.dueDate) {
-      metaHtml += `<span class="task-date">📅 ${formatDate(task.dueDate)}</span>`;
-    }
-    metaHtml += `<span class="text-small">${escapeHtml(task.listName)} • ${escapeHtml(task.sublistName)}</span>`;
-    if (task.note) {
-      metaHtml += `<span class="task-note-icon" onclick="showTaskNote('${task.id}', '${task.listId}', '${task.sublistId}')">📝</span>`;
-    }
-
-    taskEl.innerHTML = `
-      <div class="task-checkbox ${task.completed ? 'checked' : ''}" onclick="toggleTaskComplete('${task.listId}', '${task.sublistId}', '${task.id}')">
-        ${task.completed ? '✓' : ''}
-      </div>
-      <div class="task-content">
-        <div class="task-title">${escapeHtml(task.title)}</div>
-        <div class="task-meta">${metaHtml}</div>
-      </div>
-      <div class="task-actions">
-        <button class="btn-icon" onclick="editTask('${task.listId}', '${task.sublistId}', '${task.id}')">✏️</button>
-        <button class="btn-icon" onclick="deleteTask('${task.listId}', '${task.sublistId}', '${task.id}')">🗑️</button>
-      </div>
-    `;
+    const taskEl = createTaskElement(task, task.listId, task.sublistId);
+    // Adicionar nome da lista/sublista na meta
+    const meta = taskEl.querySelector('.task-meta');
+    const info = document.createElement('span');
+    info.className = 'text-small';
+    info.textContent = `${task.listName} • ${task.sublistName}`;
+    meta.appendChild(info);
+    
     container.appendChild(taskEl);
   });
 }
 
 // ============================================================================
-// Tela 6: Concluídas (Tarefas Concluídas)
+// NOVA TELA: Concluídas
 // ============================================================================
 
 function renderCompletedScreen() {
   const container = document.getElementById('completed-content');
   container.innerHTML = '';
 
-  const completedTasks = taskManager.getAllTasksSorted().filter(t => t.status === 'done');
+  const completedTasks = taskManager.getAllCompletedTasks();
 
   if (completedTasks.length === 0) {
     container.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">✅</div>
         <div class="empty-state-title">Nenhuma tarefa concluída</div>
-        <div class="empty-state-text">Complete tarefas para vê-las aqui</div>
+        <div class="empty-state-text">As tarefas que você concluir aparecerão aqui</div>
       </div>
     `;
     return;
@@ -922,31 +904,16 @@ function renderCompletedScreen() {
   completedTasks.forEach(task => {
     const taskEl = document.createElement('div');
     taskEl.className = 'task-item completed';
-    taskEl.style.borderLeftColor = 'var(--color-success)';
-
-    let metaHtml = '';
-    if (task.flagged) {
-      metaHtml += '<span class="task-flagged">🚩 Sinalizada</span>';
-    }
-    if (task.priority !== 'low') {
-      const priorityLabel = task.priority === 'high' ? 'Alta' : 'Média';
-      metaHtml += `<span class="task-priority ${task.priority}">${priorityLabel}</span>`;
-    }
-    if (task.dueDate) {
-      metaHtml += `<span class="task-date">📅 ${formatDate(task.dueDate)}</span>`;
-    }
-    metaHtml += `<span class="text-small">${escapeHtml(task.listName)} • ${escapeHtml(task.sublistName)}</span>`;
-    if (task.note) {
-      metaHtml += `<span class="task-note-icon" onclick="showTaskNote('${task.id}', '${task.listId}', '${task.sublistId}')">📝</span>`;
-    }
-
+    
     taskEl.innerHTML = `
       <div class="task-checkbox checked" onclick="toggleTaskComplete('${task.listId}', '${task.sublistId}', '${task.id}')">
         ✓
       </div>
       <div class="task-content">
         <div class="task-title">${escapeHtml(task.title)}</div>
-        <div class="task-meta">${metaHtml}</div>
+        <div class="task-meta">
+          <span class="text-small">${task.listName} • ${task.sublistName}</span>
+        </div>
       </div>
       <div class="task-actions">
         <button class="btn-icon" onclick="deleteTask('${task.listId}', '${task.sublistId}', '${task.id}')">🗑️</button>
@@ -991,19 +958,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.nav-button').forEach(btn => {
     btn.addEventListener('click', () => {
       const screen = btn.dataset.screen;
-      if (screen === 'settings') {
-        renderSettingsScreen();
-      } else if (screen === 'overview') {
-        renderOverviewScreen();
-      } else if (screen === 'kanban1') {
-        renderKanban1Screen();
-      } else if (screen === 'kanban2') {
-        renderKanban2Screen();
-      } else if (screen === 'notebook') {
-        renderNotebookScreen();
-      } else if (screen === 'completed') {
-        renderCompletedScreen();
-      }
+      if (screen === 'settings') renderSettingsScreen();
+      else if (screen === 'overview') renderOverviewScreen();
+      else if (screen === 'kanban1') renderKanban1Screen();
+      else if (screen === 'kanban2') renderKanban2Screen();
+      else if (screen === 'notebook') renderNotebookScreen();
+      else if (screen === 'completed') renderCompletedScreen();
       showScreen(screen);
     });
   });
@@ -1034,14 +994,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Botões de voltar
   document.getElementById('back-btn').addEventListener('click', goBack);
-  const backBtnSublist = document.getElementById('back-btn-sublist');
-  if (backBtnSublist) {
-    backBtnSublist.addEventListener('click', goBack);
-  }
+  document.getElementById('back-btn-sublist').addEventListener('click', goBack);
 
   // Mostrar tela inicial
   showScreen('overview');
   renderOverviewScreen();
 });
-
-
