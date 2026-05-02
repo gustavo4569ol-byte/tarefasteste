@@ -147,7 +147,7 @@ class TaskManager {
       }
       // Sincronizar completed se status mudar
       if (updates.hasOwnProperty('status')) {
-        updates.completed = updates.status === 'done';
+        updates.completed = (updates.status === 'done');
       }
       
       Object.assign(task, updates);
@@ -591,17 +591,22 @@ function saveTask() {
     return;
   }
 
+  const updates = {
+    title: title,
+    priority: priority,
+    dueDate: dueDate,
+    note: note,
+    flagged: flagged,
+    status: status
+  };
+
   if (taskId) {
-    taskManager.updateTask(taskManager.currentListId, taskManager.currentSublistId, taskId, {
-      title, priority, dueDate, note, flagged, status
-    });
+    taskManager.updateTask(taskManager.currentListId, taskManager.currentSublistId, taskId, updates);
   } else {
     taskManager.createTask(taskManager.currentListId, taskManager.currentSublistId, title);
     const sublist = taskManager.getSublist(taskManager.currentListId, taskManager.currentSublistId);
     const newTask = sublist.tasks[sublist.tasks.length - 1];
-    taskManager.updateTask(taskManager.currentListId, taskManager.currentSublistId, newTask.id, { 
-      priority, dueDate, note, flagged, status 
-    });
+    taskManager.updateTask(taskManager.currentListId, taskManager.currentSublistId, newTask.id, updates);
   }
 
   closeTaskModal();
