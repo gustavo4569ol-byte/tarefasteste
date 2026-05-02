@@ -1,34 +1,10 @@
-const CACHE_NAME = 'taskmaster-v2';
-
-const FILES_TO_CACHE = [
-  '/',
-  '/index.html',
-  '/styles.css',
-  '/script.js',
-  '/manifest.json'
-];
+const CACHE_NAME = 'taskmaster-v3';
 
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(FILES_TO_CACHE);
-    })
-  );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cache => {
-          if (cache !== CACHE_NAME) {
-            return caches.delete(cache);
-          }
-        })
-      );
-    })
-  );
   self.clients.claim();
 });
 
