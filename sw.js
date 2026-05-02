@@ -1,9 +1,5 @@
-/* ============================================================================
-   TaskMaster PWA - Service Worker
-   Suporte offline e cache de assets
-   ============================================================================ */
+const CACHE_NAME = 'taskmaster-v2';
 
-const CACHE_NAME = 'taskmaster-v1';
 const urlsToCache = [
   '/index.html',
   '/styles.css',
@@ -11,27 +7,19 @@ const urlsToCache = [
   '/manifest.json'
 ];
 
-// Instalação do Service Worker
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(urlsToCache).catch(err => {
-        console.log('Cache addAll error:', err);
-      });
-    })
+    caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache))
   );
   self.skipWaiting();
 });
 
-// Ativação do Service Worker
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
         cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
-          }
+          if (cacheName !== CACHE_NAME) return caches.delete(cacheName);
         })
       );
     })
@@ -39,25 +27,24 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-// Interceptação de requisições (Cache First Strategy)
 self.addEventListener('fetch', event => {
   event.respondWith(
-    caches.match(event.request).then(response => {
-      return response || fetch(event.request).then(response => {
-        // Não fazer cache de requisições não-GET
-        if (!event.request.method === 'GET') {
-          return response;
+    caches.match(event.request).then(cachedResponse => {
+      if (cachedResponse) return cachedResponse;
+
+      return fetch(event.request).then(networkResponse => {
+        if (event.request.method === 'GET' && networkResponse && networkResponse.status === 200) {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(event.request, responseToCache);
+          });
         }
-
-        const responseToCache = response.clone();
-        caches.open(CACHE_NAME).then(cache => {
-          cache.put(event.request, responseToCache);
-        });
-
-        return response;
+        return networkResponse;
       }).catch(() => {
-        // Retornar página offline se disponível
-        return caches.match('/index.html');
+        if (event.request.destination === 'document') {
+          return caches.match('/index.html');
+        }
+        return null;
       });
     })
   );
