@@ -2,7 +2,7 @@
   "name": "TaskMaster PWA - Gerenciador de Tarefas",
   "short_name": "TaskMaster",
   "description": "Um gerenciador de tarefas moderno e elegante com listas, sublistas, Kanbans e calendário",
-  "start_url": "/index.html",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#FFFFFF",
   "theme_color": "#FF6B35",
